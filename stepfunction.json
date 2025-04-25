@@ -1,0 +1,192 @@
+{
+    "Comment": "Appointment Booking Workflow",
+    "StartAt": "VerifyPatient",
+    "States": {
+      "VerifyPatient": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:us-east-1:990308236413:function:VerifyPatient",
+        "ResultPath": "$.verifyResult",
+        "Next": "CheckPatientStatus",
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "States.TaskFailed",
+              "States.Timeout"
+            ],
+            "IntervalSeconds": 3,
+            "MaxAttempts": 2,
+            "BackoffRate": 1.5
+          }
+        ],
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "ResultPath": "$.error",
+            "Next": "FailState"
+          }
+        ]
+      },
+      "CheckPatientStatus": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.verifyResult.statusCode",
+            "NumericEquals": 404,
+            "Next": "PatientNotFound"
+          },
+          {
+            "Variable": "$.verifyResult.statusCode",
+            "NumericEquals": 200,
+            "Next": "CheckDoctorAvailability"
+          }
+        ],
+        "Default": "FailState"
+      },
+      "PatientNotFound": {
+        "Type": "Fail",
+        "Error": "PatientNotFoundError",
+        "Cause": "Patient does not exist in the system"
+      },
+      "CheckDoctorAvailability": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:us-east-1:990308236413:function:CheckDoctorAvailability",
+        "ResultPath": "$.availabilityResult",
+        "Next": "CheckDoctorStatus",
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "States.TaskFailed",
+              "States.Timeout"
+            ],
+            "IntervalSeconds": 3,
+            "MaxAttempts": 2,
+            "BackoffRate": 1.5
+          }
+        ],
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "ResultPath": "$.error",
+            "Next": "FailState"
+          }
+        ]
+      },
+      "CheckDoctorStatus": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.availabilityResult.statusCode",
+            "NumericEquals": 404,
+            "Next": "DoctorNotFound"
+          },
+          {
+            "Variable": "$.availabilityResult.statusCode",
+            "NumericEquals": 409,
+            "Next": "DoctorNotAvailable"
+          },
+          {
+            "Variable": "$.availabilityResult.statusCode",
+            "NumericEquals": 200,
+            "Next": "ConfirmBooking"
+          }
+        ],
+        "Default": "FailState"
+      },
+      "DoctorNotFound": {
+        "Type": "Fail",
+        "Error": "DoctorNotFoundError",
+        "Cause": "Doctor does not exist in the system"
+      },
+      "DoctorNotAvailable": {
+        "Type": "Fail",
+        "Error": "DoctorNotAvailableError",
+        "Cause": "Doctor is not available at the requested time"
+      },
+      "ConfirmBooking": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:us-east-1:990308236413:function:ConfirmBooking",
+        "ResultPath": "$.confirmationResult",
+        "Next": "CheckBookingStatus",
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "States.TaskFailed",
+              "States.Timeout"
+            ],
+            "IntervalSeconds": 3,
+            "MaxAttempts": 2,
+            "BackoffRate": 1.5
+          }
+        ],
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "ResultPath": "$.error",
+            "Next": "FailState"
+          }
+        ]
+      },
+      "CheckBookingStatus": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.confirmationResult.statusCode",
+            "NumericEquals": 201,
+            "Next": "NotifyPatientAndDoctor"
+          },
+          {
+            "Variable": "$.confirmationResult.statusCode",
+            "NumericEquals": 200,
+            "Next": "NotifyPatientAndDoctor"
+          }
+        ],
+        "Default": "BookingFailed"
+      },
+      "BookingFailed": {
+        "Type": "Fail",
+        "Error": "BookingFailedError",
+        "Cause": "Failed to confirm appointment booking"
+      },
+      "NotifyPatientAndDoctor": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:us-east-1:990308236413:function:NotifyPatientAndDoctor",
+        "ResultPath": "$.notificationResult",
+        "End": true,
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "States.TaskFailed",
+              "States.Timeout"
+            ],
+            "IntervalSeconds": 3,
+            "MaxAttempts": 2,
+            "BackoffRate": 1.5
+          }
+        ],
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "ResultPath": "$.error",
+            "Next": "NotificationFailed"
+          }
+        ]
+      },
+      "NotificationFailed": {
+        "Type": "Succeed",
+        "Comment": "Booking succeeded but notification failed - booking is still valid"
+      },
+      "FailState": {
+        "Type": "Fail",
+        "Error": "UnexpectedError",
+        "Cause": "An unexpected error occurred during the booking process"
+      }
+    }
+  }
